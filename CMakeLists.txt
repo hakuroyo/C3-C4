@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.8)
 project(depth_image_to_pointcloud2)
 
+# /data is commonly mounted from Windows in the test container, where creating
+# install-time symlinks can be disallowed. Copy-install this package so the
+# workspace can still be built with colcon's --symlink-install option.
+set(AMENT_CMAKE_SYMLINK_INSTALL OFF CACHE BOOL "" FORCE)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()

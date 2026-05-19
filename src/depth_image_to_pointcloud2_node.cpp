@@ -230,6 +230,7 @@ DepthImageToPointCloud2Node::DepthImageToPointCloud2Node()
     depth_scale_ = declare_parameter<double>("depth_scale", 0.001);
     max_valid_depth_ = declare_parameter<double>("max_valid_depth", 20.0);
     show_images_ = declare_parameter<bool>("show_images", true);
+    gazebo_tran_ = declare_parameter<bool>("gazebo_tran", false);
 
     // 需要调参：这些参数会直接传给 RGB-D 去雾算法，可在 launch.py 中覆盖。
     dehaze_params_.dark_channel_radius = declare_parameter<int>("dark_channel_radius", 7);
@@ -243,16 +244,16 @@ DepthImageToPointCloud2Node::DepthImageToPointCloud2Node()
 
     const auto qos = rclcpp::SensorDataQoS();
     rgb_sub_ = create_subscription<sensor_msgs::msg::Image>(
-        "/camera/image_raw", qos,
+        "/depth_camera/image_raw", qos,
         std::bind(&DepthImageToPointCloud2Node::rgbCallback, this, std::placeholders::_1));
     depth_sub_ = create_subscription<sensor_msgs::msg::Image>(
-        "/camera/depth/image_raw", qos,
+        "/depth_camera/depth/image_raw", qos,
         std::bind(&DepthImageToPointCloud2Node::depthCallback, this, std::placeholders::_1));
     camera_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
-        "/camera/camera_info", qos,
+        "/depth_camera/camera_info", qos,
         std::bind(&DepthImageToPointCloud2Node::cameraInfoCallback, this, std::placeholders::_1));
 
-    pointcloud_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("pointcloud", 10);
+    pointcloud_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/camera/points", 10);
 
     if (show_images_ && std::getenv("DISPLAY") == nullptr) {
         RCLCPP_WARN(
@@ -410,6 +411,14 @@ sensor_msgs::msg::PointCloud2 DepthImageToPointCloud2Node::buildPointCloud(
             if (std::isfinite(z) && z > 0.0F && z <= static_cast<float>(max_valid_depth_)) {
                 x = static_cast<float>((static_cast<double>(u) - cx) * z / fx);
                 y = static_cast<float>((static_cast<double>(v) - cy) * z / fy);
+                if (gazebo_tran_) {
+                    const float optical_x = x;
+                    const float optical_y = y;
+                    const float optical_z = z;
+                    x = optical_z;
+                    y = -optical_x;
+                    z = -optical_y;
+                }
             } else {
                 z = quiet_nan;
             }

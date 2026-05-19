@@ -5,6 +5,7 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
+from launch.substitutions import PythonExpression
 
 
 def generate_launch_description():
@@ -17,6 +18,25 @@ def generate_launch_description():
         "gui",
         default_value="true",
         description="Set to false to skip gzclient.",
+    )
+    rviz_arg = DeclareLaunchArgument(
+        "rviz",
+        default_value="false",
+        description="Set to true to start RViz.",
+    )
+    gazebo_arg = DeclareLaunchArgument(
+        "gazebo",
+        default_value="false",
+        description="Set to true to start Gazebo simulation.",
+    )
+    gazebo_tran_arg = DeclareLaunchArgument(
+        "gazebo_tran",
+        default_value="false",
+        description=(
+            "Transform point cloud coordinates from Gazebo optical frame "
+            "(X right, Y down, Z forward) to ROS/RViz standard frame "
+            "(X forward, Y left, Z up)."
+        ),
     )
 
     gazebo_server = ExecuteProcess(
@@ -31,12 +51,23 @@ def generate_launch_description():
             "libgazebo_ros_force_system.so",
         ],
         output="screen",
+        condition=IfCondition(LaunchConfiguration("gazebo")),
     )
 
     gazebo_client = ExecuteProcess(
         cmd=["gzclient"],
         output="screen",
-        condition=IfCondition(LaunchConfiguration("gui")),
+        condition=IfCondition(
+            PythonExpression(
+                [
+                    "'",
+                    LaunchConfiguration("gazebo"),
+                    "' == 'true' and '",
+                    LaunchConfiguration("gui"),
+                    "' == 'true'",
+                ]
+            )
+        ),
     )
 
     rgbd_processor = Node(
@@ -60,6 +91,7 @@ def generate_launch_description():
                 "atmospheric_light_percent": 0.001,
                 "depth_compensation_strength": 0.35,
                 "max_depth_scale": 1.50,
+                "gazebo_tran": LaunchConfiguration("gazebo_tran"),
             }
         ],
     )
@@ -70,6 +102,7 @@ def generate_launch_description():
         name="rviz2",
         arguments=["-d", rviz_config],
         output="screen",
+        condition=IfCondition(LaunchConfiguration("rviz")),
     )
 
     delayed_visualization = TimerAction(
@@ -77,4 +110,6 @@ def generate_launch_description():
         actions=[gazebo_client, rgbd_processor, rviz],
     )
 
-    return LaunchDescription([gui_arg, gazebo_server, delayed_visualization])
+    return LaunchDescription(
+        [gui_arg, rviz_arg, gazebo_arg, gazebo_tran_arg, gazebo_server, delayed_visualization]
+    )

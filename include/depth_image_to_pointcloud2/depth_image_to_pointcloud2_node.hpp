@@ -75,6 +75,7 @@ private:
     double depth_scale_ = 0.001;
     double max_valid_depth_ = 20.0;
     bool show_images_ = true;
+    bool gazebo_tran_ = false;
 };
 
 }  // namespace depth_image_to_pointcloud2
