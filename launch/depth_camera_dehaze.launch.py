@@ -1,11 +1,12 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 from launch.substitutions import PythonExpression
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -13,6 +14,8 @@ def generate_launch_description():
 
     world_file = PathJoinSubstitution([package_share, "worlds", "fog_depth_camera.world"])
     rviz_config = PathJoinSubstitution([package_share, "rviz", "pointcloud.rviz"])
+    gazebo_tran = ParameterValue(LaunchConfiguration("gazebo_tran"), value_type=bool)
+    show_images = ParameterValue(LaunchConfiguration("show_images"), value_type=bool)
 
     gui_arg = DeclareLaunchArgument(
         "gui",
@@ -29,6 +32,11 @@ def generate_launch_description():
         default_value="false",
         description="Set to true to start Gazebo simulation.",
     )
+    show_images_arg = DeclareLaunchArgument(
+        "show_images",
+        default_value="true",
+        description="Set to false to disable OpenCV image windows.",
+    )
     gazebo_tran_arg = DeclareLaunchArgument(
         "gazebo_tran",
         default_value="false",
@@ -37,6 +45,16 @@ def generate_launch_description():
             "(X right, Y down, Z forward) to ROS/RViz standard frame "
             "(X forward, Y left, Z up)."
         ),
+    )
+    dl_arg = DeclareLaunchArgument(
+        "dl",
+        default_value="false",
+        description="Set to true to use the deep-learning dehaze model from models/.",
+    )
+    yolo_arg = DeclareLaunchArgument(
+        "yolo",
+        default_value="true",
+        description="Set to true to run YOLO on the dehazed camera image.",
     )
 
     gazebo_server = ExecuteProcess(
@@ -75,23 +93,57 @@ def generate_launch_description():
         executable="depth_image_to_pointcloud2",
         name="depth_image_to_pointcloud2",
         output="screen",
+        condition=UnlessCondition(LaunchConfiguration("dl")),
         parameters=[
             {
-                # 需要调参：每 4 帧处理 1 帧，减轻 OpenCV 和点云发布压力。
+                # Process one frame out of every 4 to reduce load.
                 "frame_stride": 4,
-                # 需要调参：16UC1 深度图单位换算；Gazebo 默认 32FC1 米制时不会用到。
+                # 16UC1 depth scale; Gazebo 32FC1 depth is already in meters.
                 "depth_scale": 0.001,
-                # 需要调参：超过该距离的点置为 NaN，避免 RViz 中远处噪声太多。
+                # Points beyond this distance are published as NaN.
                 "max_valid_depth": 20.0,
-                "show_images": True,
-                # 需要调参：去雾参数，雾更浓时可增大 omega 或 dark_channel_radius。
+                "show_images": show_images,
+                # Classical dehaze parameters.
                 "dark_channel_radius": 7,
                 "omega": 0.95,
                 "min_transmission": 0.10,
                 "atmospheric_light_percent": 0.001,
                 "depth_compensation_strength": 0.35,
                 "max_depth_scale": 1.50,
-                "gazebo_tran": LaunchConfiguration("gazebo_tran"),
+                "gazebo_tran": gazebo_tran,
+            }
+        ],
+    )
+    rgbd_processor_dl = Node(
+        package="depth_image_to_pointcloud2",
+        executable="depth_image_to_pointcloud2_dl",
+        name="depth_image_to_pointcloud2",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("dl")),
+        parameters=[
+            {
+                "frame_stride": 4,
+                "depth_scale": 0.001,
+                "max_valid_depth": 20.0,
+                "show_images": show_images,
+                "gazebo_tran": gazebo_tran,
+            }
+        ],
+    )
+    yolo_detector = Node(
+        package="depth_image_to_pointcloud2",
+        executable="yolo_node",
+        name="yolo_node",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("yolo")),
+        parameters=[
+            {
+                "confidence_threshold": 0.25,
+                "nms_threshold": 0.45,
+                "depth_scale": 0.001,
+                "max_valid_depth": 100.0,
+                "show_image": show_images,
+                "output_frame_id": "base_link",
             }
         ],
     )
@@ -107,9 +159,19 @@ def generate_launch_description():
 
     delayed_visualization = TimerAction(
         period=5.0,
-        actions=[gazebo_client, rgbd_processor, rviz],
+        actions=[gazebo_client, rgbd_processor, rgbd_processor_dl, yolo_detector, rviz],
     )
 
     return LaunchDescription(
-        [gui_arg, rviz_arg, gazebo_arg, gazebo_tran_arg, gazebo_server, delayed_visualization]
+        [
+            gui_arg,
+            rviz_arg,
+            gazebo_arg,
+            show_images_arg,
+            gazebo_tran_arg,
+            dl_arg,
+            yolo_arg,
+            gazebo_server,
+            delayed_visualization,
+        ]
     )

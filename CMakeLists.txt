@@ -12,10 +12,12 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS core highgui imgproc)
+find_package(OpenCV REQUIRED COMPONENTS core dnn highgui imgproc)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -34,7 +36,8 @@ endif()
 
 add_executable(depth_image_to_pointcloud2
         src/main.cpp
-        src/depth_image_to_pointcloud2_node.cpp)
+        src/depth_image_to_pointcloud2_node.cpp
+        src/classical_dehaze.cpp)
 ament_target_dependencies(depth_image_to_pointcloud2
         rclcpp
         sensor_msgs
@@ -44,14 +47,35 @@ target_include_directories(depth_image_to_pointcloud2 PRIVATE
         ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(depth_image_to_pointcloud2 ${OpenCV_LIBRARIES})
 
+add_executable(yolo_node src/yolo_node.cpp)
+ament_target_dependencies(yolo_node
+        ament_index_cpp
+        rclcpp
+        sensor_msgs
+        cv_bridge)
+target_include_directories(yolo_node PRIVATE
+        include
+        ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(yolo_node ${OpenCV_LIBRARIES})
+
 install(TARGETS
         depth_image_to_pointcloud2
+        yolo_node
         DESTINATION lib/${PROJECT_NAME})
+
+ament_python_install_package(${PROJECT_NAME})
+
+install(PROGRAMS
+        scripts/depth_image_to_pointcloud2_dl_node.py
+        DESTINATION lib/${PROJECT_NAME}
+        RENAME depth_image_to_pointcloud2_dl)
 
 install(DIRECTORY
         launch
+        models
         rviz
         worlds
+        yolo
         DESTINATION share/${PROJECT_NAME})
 
 ament_package()
